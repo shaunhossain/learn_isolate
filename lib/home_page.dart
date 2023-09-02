@@ -34,15 +34,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> sendMessage() async {
-
-    do {
       final line = _textEditingController.text.toLowerCase();
-      setState(() {
-        message = line;
-      });
       switch (line.trim().toLowerCase()) {
         case null:
-          continue;
+          break;
         case 'exit':
           exit(0);
         default:
@@ -57,9 +52,8 @@ class _MyHomePageState extends State<MyHomePage> {
           setState(() {
             message = msg;
           });
-          break;
+          false;
       }
-    } while (true);
   }
 
   @override
@@ -89,39 +83,39 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
     );
   }
+}
 
-  Future<String> getMessages(String forGreeting) async {
-    final rp = ReceivePort();
-    Isolate.spawn(
-      _communicator,
-      rp.sendPort,
-    );
+Future<String> getMessages(String forGreeting) async {
+  final rp = ReceivePort();
+  Isolate.spawn(
+    _communicator,
+    rp.sendPort,
+  );
 
-    final broadcastRp = rp.asBroadcastStream();
-    final SendPort communicatorSendPort = await broadcastRp.first;
-    communicatorSendPort.send(forGreeting);
+  final broadcastRp = rp.asBroadcastStream();
+  final SendPort communicatorSendPort = await broadcastRp.first;
+  communicatorSendPort.send(forGreeting);
 
-    return broadcastRp
-        .takeWhile((element) => element is String)
-        .cast<String>()
-        .take(1)
-        .first;
-  }
+  return broadcastRp
+      .takeWhile((element) => element is String)
+      .cast<String>()
+      .take(1)
+      .first;
+}
 
-  void _communicator(SendPort sp) async {
-    final rp = ReceivePort();
-    sp.send(rp.sendPort);
+void _communicator(SendPort sp) async {
+  final rp = ReceivePort();
+  sp.send(rp.sendPort);
 
-    final messages = rp.takeWhile((element) => element is String).cast<String>();
+  final messages = rp.takeWhile((element) => element is String).cast<String>();
 
-    await for (final message in messages) {
-      for (final entry in messagesAndResponses.entries) {
-        if (entry.key.trim().toLowerCase() == message.trim().toLowerCase()) {
-          sp.send(entry.value);
-          continue;
-        }
+  await for (final message in messages) {
+    for (final entry in messagesAndResponses.entries) {
+      if (entry.key.trim().toLowerCase() == message.trim().toLowerCase()) {
+        sp.send(entry.value);
+        continue;
       }
-      sp.send('I have no response to that!');
     }
+    sp.send('I have no response to that!');
   }
 }
