@@ -1,8 +1,10 @@
 import 'dart:developer';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:learn_isolate/message.dart';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
@@ -14,14 +16,50 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  void getMessages() async {
-    await for (final message in getMessage()) {
-      log("message : $message");
-    }
+  late TextEditingController _textEditingController;
+  String message = "Say Something!";
+
+  @override
+  void initState() {
+    _textEditingController = TextEditingController();
+    super.initState();
   }
 
-  void _incrementCounter() {
-    getMessages();
+  @override
+  void didChangeDependencies() {
+    setState(() {
+      message = _textEditingController.text.isNotEmpty ? _textEditingController.text : message ;
+    });
+    super.didChangeDependencies();
+  }
+
+  Future<void> sendMessage() async {
+
+    do {
+      final line = _textEditingController.text.toLowerCase();
+      setState(() {
+        message = line;
+      });
+      switch (line.trim().toLowerCase()) {
+        case null:
+          continue;
+        case 'exit':
+          exit(0);
+        default:
+          // try{
+          //   final msg = await getMessages(line);
+          //   log("test_message -> $msg");
+          // }catch(e){
+          //   log("test_message_error -> $e");
+          // }
+          final msg = await getMessages(line);
+          log("test_message -> $msg");
+          setState(() {
+            message = msg;
+          });
+          break;
+      }
+    } while (true);
   }
 
   @override
@@ -32,47 +70,58 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
       ),
       body: Center(
-        child: StreamBuilder<String>(
-            stream: getMessage(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const CircularProgressIndicator();
-              } else if (snapshot.connectionState == ConnectionState.active ||
-                  snapshot.connectionState == ConnectionState.done) {
-                if (snapshot.hasError) {
-                  return const Text('Error');
-                } else if (snapshot.hasData) {
-                  return Text(DateFormat.Hms().format(DateTime.parse(snapshot.data.toString())),
-                      style: const TextStyle(color: Colors.red, fontSize: 40));
-                } else {
-                  return const Text('Empty data');
-                }
-              } else {
-                return Text('State: ${snapshot.connectionState}');
-              }
-            }),
+        child: Text(message),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      bottomSheet: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: PreferredSize(
+            preferredSize: Size(MediaQuery.of(context).size.width, 80),
+            child: TextField(
+              controller: _textEditingController,
+              decoration: InputDecoration(
+                  hintText: 'Type your messages',
+                  border: InputBorder.none,
+                  suffixIcon: IconButton(
+                      onPressed: () {
+                        sendMessage();
+                      }, icon: const Icon(Icons.send))),
+            )),
+      ),
     );
   }
-}
 
-Stream<String> getMessage() {
-  final rp = ReceivePort();
-  return Isolate.spawn(_getMessage, rp.sendPort)
-      .asStream()
-      .asyncExpand((event) => rp)
-      .takeWhile((element) => element is String)
-      .cast();
-}
+  Future<String> getMessages(String forGreeting) async {
+    final rp = ReceivePort();
+    Isolate.spawn(
+      _communicator,
+      rp.sendPort,
+    );
 
-Future<void> _getMessage(SendPort sp) async {
-  await for (final now in Stream.periodic(const Duration(seconds: 1),
-      (_) => DateTime.now().toIso8601String())) {
-    sp.send(now);
+    final broadcastRp = rp.asBroadcastStream();
+    final SendPort communicatorSendPort = await broadcastRp.first;
+    communicatorSendPort.send(forGreeting);
+
+    return broadcastRp
+        .takeWhile((element) => element is String)
+        .cast<String>()
+        .take(1)
+        .first;
+  }
+
+  void _communicator(SendPort sp) async {
+    final rp = ReceivePort();
+    sp.send(rp.sendPort);
+
+    final messages = rp.takeWhile((element) => element is String).cast<String>();
+
+    await for (final message in messages) {
+      for (final entry in messagesAndResponses.entries) {
+        if (entry.key.trim().toLowerCase() == message.trim().toLowerCase()) {
+          sp.send(entry.value);
+          continue;
+        }
+      }
+      sp.send('I have no response to that!');
+    }
   }
 }
